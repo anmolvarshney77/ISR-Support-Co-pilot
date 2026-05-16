@@ -1,0 +1,120 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "United Rentals Customer Record API",
+    "version": "1.0.0",
+    "description": "Dummy CRM API for updating customer records after calls"
+  },
+  "servers": [
+    { "url": "https://your-deployed-url.vercel.app" }
+  ],
+  "paths": {
+    "/api/customer-records": {
+      "get": {
+        "operationId": "getCustomerRecord",
+        "summary": "Retrieve a customer record by account ID",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "The customer's United Rentals account ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Customer record found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CustomerRecord" }
+              }
+            }
+          },
+          "404": {
+            "description": "Customer not found"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateCustomerRecord",
+        "summary": "Update a customer record with call outcome and notes",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CustomerRecordUpdate" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Record updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "message": { "type": "string" },
+                    "updated_at": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CustomerRecord": {
+        "type": "object",
+        "properties": {
+          "account_id": { "type": "string" },
+          "customer_name": { "type": "string" },
+          "email": { "type": "string" },
+          "phone": { "type": "string" },
+          "branch": { "type": "string" },
+          "account_type": { "type": "string", "enum": ["national", "local", "walk_in"] },
+          "account_status": { "type": "string", "enum": ["active", "on_hold", "cod_only", "inactive"] },
+          "credit_limit": { "type": "number" },
+          "total_rentals": { "type": "integer" },
+          "last_contact_date": { "type": "string" },
+          "last_contact_reason": { "type": "string" },
+          "notes": { "type": "array", "items": { "type": "string" } },
+          "active_rentals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "contract_number": { "type": "string" },
+                "equipment": { "type": "string" },
+                "start_date": { "type": "string" },
+                "jobsite": { "type": "string" }
+              }
+            }
+          },
+          "jobsites": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "CustomerRecordUpdate": {
+        "type": "object",
+        "required": ["account_id"],
+        "properties": {
+          "account_id": { "type": "string" },
+          "last_contact_date": { "type": "string" },
+          "last_contact_reason": { "type": "string" },
+          "last_contact_summary": { "type": "string" },
+          "notes_to_add": { "type": "string" },
+          "equipment_of_interest": { "type": "array", "items": { "type": "string" } },
+          "status_change": { "type": "string" },
+          "new_jobsite": { "type": "string" },
+          "call_id": { "type": "string" },
+          "follow_up_date": { "type": "string" }
+        }
+      }
+    }
+  }
+}
