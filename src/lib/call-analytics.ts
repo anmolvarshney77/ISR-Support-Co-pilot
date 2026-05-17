@@ -69,10 +69,13 @@ export function averageDurationMinutes(records: CallRecord[]): number {
 }
 
 export function averageSentimentScore(records: CallRecord[]): number {
-  const scores = records
-    .map((r) => r.customer_health?.sentiment)
-    .filter((s): s is string => !!s && SENTIMENT_SCORES[s] != null)
-    .map((s) => SENTIMENT_SCORES[s]);
+  const scores: number[] = [];
+  for (const r of records) {
+    const sent = r.customer_health?.sentiment;
+    if (sent && SENTIMENT_SCORES[sent] != null) {
+      scores.push(SENTIMENT_SCORES[sent]);
+    }
+  }
   return average(scores);
 }
 
