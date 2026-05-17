@@ -28,33 +28,11 @@ import {
   type DashboardAgentSnapshot,
   demoAnalyticsSnapshot,
 } from "@/mock/app-demo-data";
-
-function parseDurationMinutes(estimate?: string): number | null {
-  if (!estimate) return null;
-  const match = estimate.match(/([\d.]+)/);
-  if (!match) return null;
-  const num = Number.parseFloat(match[1]);
-  return Number.isFinite(num) ? num : null;
-}
-
-async function getCallHistory(): Promise<CallRecord[]> {
-  try {
-    const response = await fetch("/api/call-history", {
-      method: "GET",
-    });
-    if (!response.ok) {
-      console.error("[Dashboard] Failed to fetch call history", {
-        status: response.status,
-      });
-      return [];
-    }
-    const data = (await response.json()) as CallRecord[];
-    return Array.isArray(data) ? data : [];
-  } catch (error) {
-    console.error("[Dashboard] Error fetching call history", error);
-    return [];
-  }
-}
+import {
+  averageDurationMinutes,
+  fetchCallHistory,
+  getRecordCallDate,
+} from "@/lib/call-analytics";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -63,7 +41,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     void (async () => {
-      const data = await getCallHistory();
+      const data = await fetchCallHistory();
       setRecords(data);
       const agentData = await getDashboardAgents();
       setAgents(agentData);
@@ -112,37 +90,19 @@ export default function DashboardPage() {
       .length;
     const aiRate = total > 0 ? Math.round((resolved / total) * 100) : 0;
 
-    const durations: number[] = [];
-    for (const r of records) {
-      const mins = parseDurationMinutes(r.call_summary?.call_duration_estimate);
-      if (mins != null) durations.push(mins);
-    }
-    const avgMins =
-      durations.length > 0
-        ? Number(
-            (
-              durations.reduce((a, b) => a + b, 0) / durations.length
-            ).toFixed(1)
-          )
-        : 0;
+    const avgMins = averageDurationMinutes(records);
 
     const today = new Date();
     const todayCount = records.filter((r) => {
-      const d = r.call_summary?.call_date;
-      if (!d) return false;
-      const parsed = new Date(d);
-      if (Number.isNaN(parsed.getTime())) return false;
-      return isSameDay(parsed, today);
+      const parsed = getRecordCallDate(r);
+      return parsed != null && isSameDay(parsed, today);
     }).length;
 
     const days = Array.from({ length: 7 }, (_, idx) => subDays(now, 6 - idx));
     const series = days.map((day) => {
       const count = records.filter((r) => {
-        const d = r.call_summary?.call_date;
-        if (!d) return false;
-        const parsed = new Date(d);
-        if (Number.isNaN(parsed.getTime())) return false;
-        return isSameDay(parsed, day);
+        const parsed = getRecordCallDate(r);
+        return parsed != null && isSameDay(parsed, day);
       }).length;
       return { day, count };
     });
