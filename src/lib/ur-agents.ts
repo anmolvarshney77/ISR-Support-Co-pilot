@@ -575,6 +575,53 @@ interface LyzrSummaryResponse {
   };
 }
 
+/** Agent JSON often nests metadata under `call_summary` (object) per prompt schema. */
+function normalizeLyzrSummaryResponse(
+  raw: LyzrSummaryResponse & { call_summary?: unknown }
+): LyzrSummaryResponse {
+  const meta = raw.call_summary;
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) {
+    return raw;
+  }
+  const m = meta as Record<string, unknown>;
+  const primaryFromMeta =
+    typeof m.call_category === "string"
+      ? m.call_category
+      : typeof m.subcategory === "string"
+        ? m.subcategory
+        : undefined;
+  return {
+    ...raw,
+    call_record_id:
+      raw.call_record_id ??
+      (typeof m.call_id === "string" ? m.call_id : undefined),
+    call_date:
+      raw.call_date ?? (typeof m.call_date === "string" ? m.call_date : undefined),
+    account_name:
+      raw.account_name ??
+      (typeof m.customer_name === "string" ? m.customer_name : undefined),
+    account_id:
+      raw.account_id ??
+      (typeof m.customer_account === "string"
+        ? m.customer_account
+        : m.customer_account != null
+          ? String(m.customer_account)
+          : undefined),
+    job_site:
+      raw.job_site ?? (typeof m.branch === "string" ? m.branch : undefined),
+    call_categories:
+      raw.call_categories ??
+      (primaryFromMeta
+        ? {
+            primary_type: primaryFromMeta,
+            secondary_types:
+              typeof m.subcategory === "string" ? [m.subcategory] : undefined,
+          }
+        : undefined),
+    call_summary: undefined,
+  };
+}
+
 function buildLocalFallbackSummary(
   fullTranscript: string,
   customerName?: string
@@ -973,6 +1020,29 @@ export async function generateCallSummary(
   customerName?: string,
   customerAccount?: string
 ): Promise<CallRecord> {
+  // In the browser, route via our Next.js API to avoid CORS and keep API keys server-side.
+  if (typeof window !== "undefined") {
+    const res = await fetch("/api/call-summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transcript: fullTranscript,
+        sessionId,
+        customerName,
+        customerAccount,
+      }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Call summary proxy error: ${res.status} ${text}`);
+    }
+    const data = (await res.json()) as { record?: CallRecord };
+    if (!data.record) {
+      throw new Error("Call summary proxy returned no record");
+    }
+    return data.record;
+  }
+
   // #region agent log
   const transcriptLen = typeof fullTranscript === "string" ? fullTranscript.trim().length : 0;
   fetch("http://127.0.0.1:7594/ingest/a2672ed4-520f-49e8-9f0d-1425ca65bd21", {
@@ -1005,6 +1075,7 @@ export async function generateCallSummary(
 
   const MAX_ATTEMPTS = 4;
   const RETRY_DELAY_MS = 2000;
+  let agentHttpFailed = false;
 
   try {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -1029,7 +1100,18 @@ export async function generateCallSummary(
       });
 
       if (!response.ok) {
-        throw new Error(`Summary agent error: ${response.status}`);
+        agentHttpFailed = true;
+        const errBody = await response.text().catch(() => "");
+        console.warn("[SummaryAgent] Lyzr HTTP error", {
+          status: response.status,
+          attempt,
+          body: errBody.slice(0, 400),
+        });
+        if (attempt < MAX_ATTEMPTS && response.status >= 500) {
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+          continue;
+        }
+        break;
       }
 
       const responseText = await response.text();
@@ -1076,7 +1158,7 @@ export async function generateCallSummary(
       }
     }
 
-    if (isErrorReply) {
+    if (agentHttpFailed || isErrorReply) {
       console.warn(
         "[SummaryAgent] Using local fallback only after all retries failed (last resort)"
       );
@@ -1088,10 +1170,16 @@ export async function generateCallSummary(
     }
 
     // Lyzr may return response as string (JSON) or already as object
-    let parsed: LyzrSummaryResponse | null =
-      typeof data.response === "object" && data.response !== null
+    let parsed: LyzrSummaryResponse | null = null;
+    const rawParsed: LyzrSummaryResponse | null =
+      typeof data?.response === "object" && data.response !== null
         ? (data.response as LyzrSummaryResponse)
         : tryParseJson<LyzrSummaryResponse>(reply);
+    if (rawParsed) {
+      parsed = normalizeLyzrSummaryResponse(
+        rawParsed as LyzrSummaryResponse & { call_summary?: unknown }
+      );
+    }
 
     // #region agent log
     if (parsed) {

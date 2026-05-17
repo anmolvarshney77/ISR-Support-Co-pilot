@@ -616,8 +616,6 @@ export default function CoPilotPage() {
           customerName,
           customerAccount,
         });
-        // First, call the Summary Agent directly from the browser so it is visible
-        // in the Network tab and we can inspect the payload/response.
         summary = await generateCallSummary(
           fullTranscript,
           sid,
@@ -928,9 +926,10 @@ export default function CoPilotPage() {
       }),
     }).catch(() => {});
     // #endregion
-    if (transcriptEntries.length > 0) {
+    const transcriptSnapshot = [...transcriptRef.current];
+    if (transcriptSnapshot.length > 0) {
       setCallStatus("summarizing");
-      const fullTranscript = transcriptEntries
+      const fullTranscript = transcriptSnapshot
         .map((e) => `${e.speaker}: ${e.text}`)
         .join("\n");
       const personaLabel =
